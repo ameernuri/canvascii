@@ -27,3 +27,13 @@ The Docker stack starts:
 - `canvascii-minio` on `127.0.0.1:5005`
 
 The app now owns its own auth and file library routes. You can create an account at `/sign-in`, then save canvases without relying on any external monorepo API.
+
+## Production
+
+Production uses:
+
+- Vercel for `apps/canvascii`
+- DigitalOcean App Platform for `apps/canvascii-collab`
+- a shared Postgres database
+
+Deployment notes live in [docs/production-deploy.md](/Users/ameer/projects/canvascii/docs/production-deploy.md).
