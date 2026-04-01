@@ -1,0 +1,14 @@
+node_modules
+.next
+.turbo
+dist
+.env
+.env.local
+*.tsbuildinfo
+.vercel
+.env.*.local
+.canvascii-collab-data
+.canvascii-app-data
+test-results
+tmp
+.DS_Store

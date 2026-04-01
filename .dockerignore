@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+pnpm-debug.log
+apps/canvascii/.next
+apps/canvascii/node_modules
+apps/canvascii-collab/node_modules
+packages/canvascii-core/node_modules

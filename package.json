@@ -1,0 +1,28 @@
+{
+  "name": "canvascii",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm -r --parallel --if-present dev",
+    "build": "pnpm -r --if-present build",
+    "mcp:start": "pnpm --filter @canvascii/mcp start",
+    "mcp:stdio": "./scripts/canvascii-mcp-stdio",
+    "agent:smoke": "node ./scripts/agent-collab-smoke.mjs",
+    "mirror:start": "node ./packages/canvascii-agent-client/mirror-session.mjs",
+    "observe:start": "node ./packages/canvascii-agent-client/observe-session.mjs",
+    "stack:up": "docker compose up -d --build",
+    "stack:down": "docker compose down",
+    "stack:logs": "docker compose logs -f",
+    "stack:test": "pnpm --filter @canvascii/collab stack:test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^20.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
