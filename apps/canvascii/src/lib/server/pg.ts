@@ -1,3 +1,4 @@
+import { createCanvasciiPostgresConfig } from '@canvascii/core'
 import { Pool } from 'pg'
 import { canvasciiServerEnv } from './env'
 
@@ -8,9 +9,7 @@ declare global {
 
 export const canvasciiPgPool =
   globalThis.__canvasciiPgPool ??
-  new Pool({
-    connectionString: canvasciiServerEnv.DATABASE_URL,
-  })
+  new Pool(createCanvasciiPostgresConfig(canvasciiServerEnv.DATABASE_URL))
 
 if (process.env.NODE_ENV !== 'production') {
   globalThis.__canvasciiPgPool = canvasciiPgPool
