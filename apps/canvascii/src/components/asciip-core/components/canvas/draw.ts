@@ -23,12 +23,13 @@ import {
 } from "../../models/rectangleText";
 import { getLineLabelTextShape, isLineLikeShape } from "../../models/lineFeatures";
 
+// Kreative Square SM gives the canvas consistent box-drawing glyphs and a
+// square-ish cell grid. Keep the editing surface and renderer on the same metrics.
 export const FONT_SIZE = 16;
-export const FONT_WIDTH = 9.603; // see https://stackoverflow.com/a/56379770/471461
-export const CELL_WIDTH = FONT_WIDTH;
-export const CELL_HEIGHT = FONT_SIZE * 1.1;
+export const CELL_WIDTH = 16;
+export const CELL_HEIGHT = 16;
 
-export const FONT_FAMILY = "monospace";
+export const FONT_FAMILY = '"Kreative Square SM", monospace';
 export const FONT = `${FONT_SIZE}px ${FONT_FAMILY}`;
 const BORDERLESS_SOLID_EDGE_INSET_PX = 0;
 // Overlap filled cells a little so subpixel antialiasing cannot reveal the grid

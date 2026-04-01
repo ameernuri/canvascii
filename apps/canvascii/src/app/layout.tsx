@@ -20,6 +20,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning className={cn("font-sans", geist.variable)}>
+      <head>
+        <link
+          rel="preload"
+          href="/fonts/KreativeSquareSM.ttf"
+          as="font"
+          type="font/ttf"
+          crossOrigin="anonymous"
+        />
+      </head>
       <body className="min-h-screen bg-background font-sans antialiased">
         <TooltipProvider>
           <ThemeProvider>

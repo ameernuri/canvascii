@@ -2,7 +2,7 @@ import { useAppSelector, useEditorInteractions } from "../../store/hooks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { normalizeTlBr } from "../../models/shapes";
-import { CELL_HEIGHT, CELL_WIDTH, DrawOptions, canvasDraw } from "./draw";
+import { CELL_HEIGHT, CELL_WIDTH, DrawOptions, FONT, canvasDraw } from "./draw";
 import { TextShapeInput } from "./TextShapeInput";
 import { LineTextFloatingControls } from "./LineTextFloatingControls";
 import { RectangleTextFloatingControls } from "./RectangleTextFloatingControls";
@@ -411,6 +411,7 @@ export default function Canvas({
   const [contextMenuSelectionIds, setContextMenuSelectionIds] = useState<string[]>([]);
   const contextMenuSelectionIdsRef = useRef<string[]>([]);
   const [canvasContextMenuOpen, setCanvasContextMenuOpen] = useState(false);
+  const [, setCanvasFontReady] = useState(false);
   const canCreateComponentFromSelection = Boolean(onRequestCreateComponentFromSelection);
 
   const nextActionOnClick = useAppSelector((state) =>
@@ -576,6 +577,27 @@ export default function Canvas({
   const handleCreateComponentContextAction = useCallback((shapeIds?: string[]) => {
     onRequestCreateComponentFromSelection?.(shapeIds && shapeIds.length > 0 ? shapeIds : undefined);
   }, [onRequestCreateComponentFromSelection]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || !("fonts" in document)) {
+      return;
+    }
+
+    let cancelled = false;
+
+    document.fonts
+      .load(FONT, "M")
+      .catch(() => null)
+      .then(() => {
+        if (!cancelled) {
+          setCanvasFontReady((value) => !value);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const triggerCreateComponentFromContextSelection = useCallback(() => {
     const selectedIds = [...contextMenuSelectionIdsRef.current];
