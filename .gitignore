@@ -12,3 +12,4 @@ dist
 test-results
 tmp
 .DS_Store
+.git.disabled
