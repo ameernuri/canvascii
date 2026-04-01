@@ -5,32 +5,34 @@ type PostgresPoolConfig = {
   }
 }
 
-function shouldUseTlsRelaxedVerification(databaseUrl: string): boolean {
-  let parsed: URL
-
+function parseDatabaseUrl(databaseUrl: string): URL | null {
   try {
-    parsed = new URL(databaseUrl)
+    return new URL(databaseUrl)
   } catch {
-    return false
+    return null
   }
+}
 
-  const sslmode = parsed.searchParams.get('sslmode')?.toLowerCase()
-  if (!sslmode) {
-    return false
-  }
-
-  return !['disable', 'allow', 'prefer'].includes(sslmode)
+function shouldUseTlsRelaxedVerification(parsed: URL | null): boolean {
+  const sslmode = parsed?.searchParams.get('sslmode')?.toLowerCase()
+  return Boolean(sslmode && !['disable', 'allow', 'prefer'].includes(sslmode))
 }
 
 export function createCanvasciiPostgresConfig(databaseUrl: string): PostgresPoolConfig {
-  return shouldUseTlsRelaxedVerification(databaseUrl)
-    ? {
-        connectionString: databaseUrl,
-        ssl: {
-          rejectUnauthorized: false,
-        },
-      }
-    : {
-        connectionString: databaseUrl,
-      }
+  const parsed = parseDatabaseUrl(databaseUrl)
+
+  if (shouldUseTlsRelaxedVerification(parsed)) {
+    parsed?.searchParams.delete('sslmode')
+
+    return {
+      connectionString: parsed?.toString() ?? databaseUrl,
+      ssl: {
+        rejectUnauthorized: false,
+      },
+    }
+  }
+
+  return {
+    connectionString: databaseUrl,
+  }
 }
