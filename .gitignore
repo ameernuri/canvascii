@@ -9,6 +9,7 @@ dist
 .env.*.local
 .canvascii-collab-data
 .canvascii-app-data
+.playwright-mcp
 test-results
 tmp
 .DS_Store

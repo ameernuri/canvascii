@@ -1,0 +1,29 @@
+name: Deploy Collab
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-collab
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DO_ACCESS_TOKEN }}
+
+      - name: Trigger App Platform deployment from GitHub head
+        env:
+          APP_ID: 047bf67f-6337-45fc-8658-37cbaa0f9b8c
+        run: |
+          doctl apps create-deployment "$APP_ID" --force-rebuild --wait --format ID,Cause,Phase,Created,Updated
