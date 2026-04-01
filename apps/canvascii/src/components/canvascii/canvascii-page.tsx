@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import {
   ArrowLeft,
   Blocks,
@@ -48,8 +49,6 @@ import {
 } from '@canvascii/agent-client/structure-command-language'
 import { createUniqueCanvasName } from '@canvascii/agent-client/canvas-names'
 import { canvasLibraryApi, type CanvasDetail, type CanvasSummary } from '@/lib/canvas-library-api'
-import { CollaborativeEditorShell } from '@/components/canvascii/collaborative-editor-shell'
-import { CanvasShareDialog } from '@/components/canvascii/canvas-share-dialog'
 import { useCanvasShareActions } from '@/components/canvascii/use-canvas-share-actions'
 import { initAppState, type AppState, type ComponentAttribute } from '@/components/asciip-core/store/appSlice'
 import type { AsciipCommittedState } from '@/components/asciip-core/store/middleware'
@@ -74,6 +73,25 @@ import {
   parseCanvasToolCommand as parseCanonicalTerminalCommand,
   type ParsedTerminalCommand,
 } from '@/lib/canvascii/terminal-commands'
+
+const CollaborativeEditorShell = dynamic(
+  () => import('@/components/canvascii/collaborative-editor-shell').then((module) => module.CollaborativeEditorShell),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[60vh] items-center justify-center text-sm text-white/55">
+        Loading editor...
+      </div>
+    ),
+  },
+)
+
+const CanvasShareDialog = dynamic(
+  () => import('@/components/canvascii/canvas-share-dialog').then((module) => module.CanvasShareDialog),
+  {
+    ssr: false,
+  },
+)
 
 function formatAgo(value?: string | null) {
   if (!value) return 'unknown'
