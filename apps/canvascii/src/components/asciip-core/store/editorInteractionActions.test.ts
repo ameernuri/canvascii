@@ -3,6 +3,53 @@ import { editorInteractionActions } from "./editorInteractionActions";
 import { createAsciipStore } from "./store";
 import { appActions, initAppState } from "./appSlice";
 import { layoutRectangleLabelLines } from "../models/rectangleText";
+import type { Coords, Shape } from "../models/shapes";
+
+function createLinePath(
+  store: ReturnType<typeof createAsciipStore>,
+  points: Coords[],
+) {
+  store.dispatch(editorInteractionActions.setTool("LINE"));
+  store.dispatch(editorInteractionActions.pointerClick({ coords: points[0]! }));
+  points.slice(1).forEach((point) => {
+    store.dispatch(editorInteractionActions.pointerHover(point));
+    store.dispatch(editorInteractionActions.pointerClick({ coords: point }));
+  });
+  store.dispatch(editorInteractionActions.completePolyline());
+}
+
+function getLineShape(shape: Shape): {
+  start: Coords;
+  end: Coords;
+  type: "LINE" | "MULTI_SEGMENT_LINE";
+  labelLines?: string[];
+  startBinding?: { targetShapeId: string; side: string; position: number; locked?: boolean };
+  endBinding?: { targetShapeId: string; side: string; position: number; locked?: boolean };
+  segments?: { start: Coords; end: Coords }[];
+} | null {
+  if (shape.type === "LINE") {
+    return {
+      type: "LINE",
+      start: shape.start,
+      end: shape.end,
+      labelLines: shape.labelLines,
+      startBinding: shape.startBinding,
+      endBinding: shape.endBinding,
+    };
+  }
+  if (shape.type === "MULTI_SEGMENT_LINE") {
+    return {
+      type: "MULTI_SEGMENT_LINE",
+      start: shape.segments[0]?.start ?? { r: 0, c: 0 },
+      end: shape.segments[shape.segments.length - 1]?.end ?? { r: 0, c: 0 },
+      labelLines: shape.labelLines,
+      startBinding: shape.startBinding,
+      endBinding: shape.endBinding,
+      segments: shape.segments.map((segment) => ({ start: segment.start, end: segment.end })),
+    };
+  }
+  return null;
+}
 
 describe("editorInteractionActions", () => {
   it("forwards interaction intents into the diagram reducers", () => {
@@ -491,10 +538,7 @@ describe("editorInteractionActions", () => {
     store.dispatch(editorInteractionActions.pointerHover({ r: 10, c: 14 }));
     store.dispatch(editorInteractionActions.pointerUp({ r: 10, c: 14 }));
 
-    store.dispatch(editorInteractionActions.setTool("LINE"));
-    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 14 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 8, c: 24 }));
-    store.dispatch(editorInteractionActions.pointerUp({ r: 8, c: 24 }));
+    createLinePath(store, [{ r: 8, c: 14 }, { r: 8, c: 24 }]);
 
     store.dispatch(editorInteractionActions.setTool("SELECT"));
     store.dispatch(editorInteractionActions.pointerClick({ coords: { r: 8, c: 6 } }));
@@ -505,13 +549,16 @@ describe("editorInteractionActions", () => {
     const state = store.getState();
     const activeDiagram =
       state.app.diagrams.find((diagram) => diagram.id === state.app.activeDiagramId) ?? null;
-    const lineShape = activeDiagram?.data.shapes.find((shape) => shape.shape.type === "LINE");
+    const lineShape = activeDiagram?.data.shapes.find(
+      (shape) => shape.shape.type === "LINE" || shape.shape.type === "MULTI_SEGMENT_LINE"
+    );
+    const line = lineShape ? getLineShape(lineShape.shape) : null;
 
-    expect(lineShape?.shape.type).toBe("LINE");
-    if (lineShape?.shape.type === "LINE") {
-      expect(lineShape.shape.startBinding?.targetShapeId).toBe(activeDiagram?.data.shapes[0]?.id);
-      expect(lineShape.shape.start.c).toBe(22);
-      expect(lineShape.shape.start.r).toBe(14);
+    expect(line?.type).toBe("MULTI_SEGMENT_LINE");
+    if (line) {
+      expect(line.startBinding?.targetShapeId).toBe(activeDiagram?.data.shapes[0]?.id);
+      expect(line.start.c).toBe(22);
+      expect(line.start.r).toBe(14);
     }
   });
 
@@ -522,10 +569,7 @@ describe("editorInteractionActions", () => {
     store.dispatch(editorInteractionActions.pointerHover({ r: 10, c: 14 }));
     store.dispatch(editorInteractionActions.pointerUp({ r: 10, c: 14 }));
 
-    store.dispatch(editorInteractionActions.setTool("LINE"));
-    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 14 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 8, c: 24 }));
-    store.dispatch(editorInteractionActions.pointerUp({ r: 8, c: 24 }));
+    createLinePath(store, [{ r: 8, c: 14 }, { r: 8, c: 24 }]);
 
     store.dispatch(editorInteractionActions.setTool("SELECT"));
     store.dispatch(editorInteractionActions.pointerClick({ coords: { r: 8, c: 6 } }));
@@ -544,16 +588,19 @@ describe("editorInteractionActions", () => {
     const activeDiagram =
       state.app.diagrams.find((diagram) => diagram.id === state.app.activeDiagramId) ?? null;
     const movedRectangle = activeDiagram?.data.shapes.find((shape) => shape.shape.type === "RECTANGLE");
-    const movedLine = activeDiagram?.data.shapes.find((shape) => shape.shape.type === "LINE");
+    const movedLineShape = activeDiagram?.data.shapes.find(
+      (shape) => shape.shape.type === "LINE" || shape.shape.type === "MULTI_SEGMENT_LINE"
+    );
+    const movedLine = movedLineShape ? getLineShape(movedLineShape.shape) : null;
 
     expect(movedRectangle?.shape.type).toBe("RECTANGLE");
-    expect(movedLine?.shape.type).toBe("LINE");
-    if (movedRectangle?.shape.type === "RECTANGLE" && movedLine?.shape.type === "LINE") {
+    expect(movedLine?.type).toBe("MULTI_SEGMENT_LINE");
+    if (movedRectangle?.shape.type === "RECTANGLE" && movedLine) {
       expect(movedRectangle.shape.tl).toEqual({ r: 12, c: 14 });
       expect(movedRectangle.shape.br).toEqual({ r: 16, c: 22 });
-      expect(movedLine.shape.start).toEqual({ r: 14, c: 22 });
-      expect(movedLine.shape.end).toEqual({ r: 14, c: 32 });
-      expect(movedLine.shape.startBinding).toEqual({
+      expect(movedLine.start).toEqual({ r: 14, c: 22 });
+      expect(movedLine.end).toEqual({ r: 14, c: 32 });
+      expect(movedLine.startBinding).toEqual({
         targetShapeId: movedRectangle.id,
         side: "RIGHT",
         position: 0.5,
@@ -574,10 +621,7 @@ describe("editorInteractionActions", () => {
     store.dispatch(editorInteractionActions.pointerHover({ r: 10, c: 34 }));
     store.dispatch(editorInteractionActions.pointerUp({ r: 10, c: 34 }));
 
-    store.dispatch(editorInteractionActions.setTool("LINE"));
-    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 14 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 8, c: 26 }));
-    store.dispatch(editorInteractionActions.pointerUp({ r: 8, c: 26 }));
+    createLinePath(store, [{ r: 8, c: 14 }, { r: 8, c: 26 }]);
 
     store.dispatch(editorInteractionActions.setTool("SELECT"));
     store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 4, c: 4 } }));
@@ -592,11 +636,14 @@ describe("editorInteractionActions", () => {
     const activeDiagram =
       state.app.diagrams.find((diagram) => diagram.id === state.app.activeDiagramId) ?? null;
     const rectangles = activeDiagram?.data.shapes.filter((shape) => shape.shape.type === "RECTANGLE") ?? [];
-    const movedLine = activeDiagram?.data.shapes.find((shape) => shape.shape.type === "LINE");
+    const movedLineShape = activeDiagram?.data.shapes.find(
+      (shape) => shape.shape.type === "LINE" || shape.shape.type === "MULTI_SEGMENT_LINE"
+    );
+    const movedLine = movedLineShape ? getLineShape(movedLineShape.shape) : null;
 
     expect(rectangles).toHaveLength(2);
-    expect(movedLine?.shape.type).toBe("LINE");
-    if (rectangles.length === 2 && movedLine?.shape.type === "LINE") {
+    expect(movedLine?.type).toBe("MULTI_SEGMENT_LINE");
+    if (rectangles.length === 2 && movedLine) {
       expect(rectangles[0]?.shape.type).toBe("RECTANGLE");
       expect(rectangles[1]?.shape.type).toBe("RECTANGLE");
       if (rectangles[0]?.shape.type === "RECTANGLE" && rectangles[1]?.shape.type === "RECTANGLE") {
@@ -605,10 +652,10 @@ describe("editorInteractionActions", () => {
         expect(rectangles[1].shape.tl).toEqual({ r: 12, c: 34 });
         expect(rectangles[1].shape.br).toEqual({ r: 16, c: 42 });
       }
-      expect(movedLine.shape.start).toEqual({ r: 14, c: 22 });
-      expect(movedLine.shape.end).toEqual({ r: 14, c: 34 });
-      expect(movedLine.shape.startBinding?.targetShapeId).toBe(rectangles[0]?.id);
-      expect(movedLine.shape.endBinding?.targetShapeId).toBe(rectangles[1]?.id);
+      expect(movedLine.start).toEqual({ r: 14, c: 22 });
+      expect(movedLine.end).toEqual({ r: 14, c: 34 });
+      expect(movedLine.startBinding?.targetShapeId).toBe(rectangles[0]?.id);
+      expect(movedLine.endBinding?.targetShapeId).toBe(rectangles[1]?.id);
     }
   });
 
@@ -624,10 +671,7 @@ describe("editorInteractionActions", () => {
     store.dispatch(editorInteractionActions.pointerHover({ r: 10, c: 34 }));
     store.dispatch(editorInteractionActions.pointerUp({ r: 10, c: 34 }));
 
-    store.dispatch(editorInteractionActions.setTool("LINE"));
-    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 14 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 8, c: 26 }));
-    store.dispatch(editorInteractionActions.pointerUp({ r: 8, c: 26 }));
+    createLinePath(store, [{ r: 8, c: 14 }, { r: 8, c: 26 }]);
 
     store.dispatch(editorInteractionActions.setTool("SELECT"));
     store.dispatch(editorInteractionActions.pointerClick({ coords: { r: 8, c: 6 } }));
@@ -655,11 +699,14 @@ describe("editorInteractionActions", () => {
     const activeDiagram =
       state.app.diagrams.find((diagram) => diagram.id === state.app.activeDiagramId) ?? null;
     const rectangles = activeDiagram?.data.shapes.filter((shape) => shape.shape.type === "RECTANGLE") ?? [];
-    const movedLine = activeDiagram?.data.shapes.find((shape) => shape.shape.type === "LINE");
+    const movedLineShape = activeDiagram?.data.shapes.find(
+      (shape) => shape.shape.type === "LINE" || shape.shape.type === "MULTI_SEGMENT_LINE"
+    );
+    const movedLine = movedLineShape ? getLineShape(movedLineShape.shape) : null;
 
     expect(rectangles).toHaveLength(2);
-    expect(movedLine?.shape.type).toBe("LINE");
-    if (rectangles.length === 2 && movedLine?.shape.type === "LINE") {
+    expect(movedLine?.type).toBe("MULTI_SEGMENT_LINE");
+    if (rectangles.length === 2 && movedLine) {
       expect(rectangles[0]?.shape.type).toBe("RECTANGLE");
       expect(rectangles[1]?.shape.type).toBe("RECTANGLE");
       if (rectangles[0]?.shape.type === "RECTANGLE" && rectangles[1]?.shape.type === "RECTANGLE") {
@@ -668,10 +715,10 @@ describe("editorInteractionActions", () => {
         expect(rectangles[1].shape.tl).toEqual({ r: 12, c: 34 });
         expect(rectangles[1].shape.br).toEqual({ r: 16, c: 42 });
       }
-      expect(movedLine.shape.start).toEqual({ r: 14, c: 22 });
-      expect(movedLine.shape.end).toEqual({ r: 14, c: 34 });
-      expect(movedLine.shape.startBinding?.targetShapeId).toBe(rectangles[0]?.id);
-      expect(movedLine.shape.endBinding?.targetShapeId).toBe(rectangles[1]?.id);
+      expect(movedLine.start).toEqual({ r: 14, c: 22 });
+      expect(movedLine.end).toEqual({ r: 14, c: 34 });
+      expect(movedLine.startBinding?.targetShapeId).toBe(rectangles[0]?.id);
+      expect(movedLine.endBinding?.targetShapeId).toBe(rectangles[1]?.id);
     }
   });
 
@@ -682,10 +729,7 @@ describe("editorInteractionActions", () => {
     store.dispatch(editorInteractionActions.pointerHover({ r: 10, c: 14 }));
     store.dispatch(editorInteractionActions.pointerUp({ r: 10, c: 14 }));
 
-    store.dispatch(editorInteractionActions.setTool("LINE"));
-    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 14 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 8, c: 24 }));
-    store.dispatch(editorInteractionActions.pointerUp({ r: 8, c: 24 }));
+    createLinePath(store, [{ r: 8, c: 14 }, { r: 8, c: 24 }]);
 
     store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 18 } }));
     store.dispatch(editorInteractionActions.pointerHover({ r: 14, c: 24 }));
@@ -695,25 +739,25 @@ describe("editorInteractionActions", () => {
       store.getState().app.diagrams.find(
         (diagram) => diagram.id === store.getState().app.activeDiagramId,
       ) ?? null;
-    const lineShape = activeDiagram?.data.shapes.find((shape) => shape.shape.type === "LINE");
+    const lineShape = activeDiagram?.data.shapes.find(
+      (shape) => shape.shape.type === "LINE" || shape.shape.type === "MULTI_SEGMENT_LINE"
+    );
+    const line = lineShape ? getLineShape(lineShape.shape) : null;
 
-    expect(lineShape?.shape.type).toBe("LINE");
-    if (lineShape?.shape.type === "LINE") {
-      expect(lineShape.shape.startBinding?.targetShapeId).toBe(activeDiagram?.data.shapes[0]?.id);
+    expect(line?.type).toBe("MULTI_SEGMENT_LINE");
+    if (line) {
+      expect(line.startBinding?.targetShapeId).toBe(activeDiagram?.data.shapes[0]?.id);
     }
   });
 
-  it("disconnects a bound line endpoint when it is resized away from the box border", () => {
+  it("keeps the anchored endpoint bound when reshaping the first segment away from the box border", () => {
     const store = createAsciipStore();
 
     store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 6, c: 6 } }));
     store.dispatch(editorInteractionActions.pointerHover({ r: 10, c: 14 }));
     store.dispatch(editorInteractionActions.pointerUp({ r: 10, c: 14 }));
 
-    store.dispatch(editorInteractionActions.setTool("LINE"));
-    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 14 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 8, c: 24 }));
-    store.dispatch(editorInteractionActions.pointerUp({ r: 8, c: 24 }));
+    createLinePath(store, [{ r: 8, c: 14 }, { r: 8, c: 24 }]);
 
     store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 14 } }));
     store.dispatch(editorInteractionActions.pointerHover({ r: 4, c: 18 }));
@@ -723,12 +767,16 @@ describe("editorInteractionActions", () => {
       store.getState().app.diagrams.find(
         (diagram) => diagram.id === store.getState().app.activeDiagramId,
       ) ?? null;
-    const lineShape = activeDiagram?.data.shapes.find((shape) => shape.shape.type === "LINE");
+    const lineShape = activeDiagram?.data.shapes.find(
+      (shape) => shape.shape.type === "LINE" || shape.shape.type === "MULTI_SEGMENT_LINE"
+    );
+    const line = lineShape ? getLineShape(lineShape.shape) : null;
 
-    expect(lineShape?.shape.type).toBe("LINE");
-    if (lineShape?.shape.type === "LINE") {
-      expect(lineShape.shape.startBinding).toBeUndefined();
-      expect(lineShape.shape.endBinding).toBeUndefined();
+    expect(line?.type).toBe("MULTI_SEGMENT_LINE");
+    if (line) {
+      expect(line.startBinding?.targetShapeId).toBe(activeDiagram?.data.shapes[0]?.id);
+      expect(line.endBinding).toBeUndefined();
+      expect(line.start).toEqual({ r: 8, c: 14 });
     }
   });
 
@@ -739,10 +787,7 @@ describe("editorInteractionActions", () => {
     store.dispatch(editorInteractionActions.pointerHover({ r: 10, c: 34 }));
     store.dispatch(editorInteractionActions.pointerUp({ r: 10, c: 34 }));
 
-    store.dispatch(editorInteractionActions.setTool("LINE"));
-    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 6 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 8, c: 18 }));
-    store.dispatch(editorInteractionActions.pointerUp({ r: 8, c: 18 }));
+    createLinePath(store, [{ r: 8, c: 6 }, { r: 8, c: 18 }]);
 
     store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 18 } }));
     store.dispatch(editorInteractionActions.pointerHover({ r: 8, c: 28 }));
@@ -752,16 +797,19 @@ describe("editorInteractionActions", () => {
       store.getState().app.diagrams.find(
         (diagram) => diagram.id === store.getState().app.activeDiagramId,
       ) ?? null;
-    const lineShape = activeDiagram?.data.shapes.find((shape) => shape.shape.type === "LINE");
+    const lineShape = activeDiagram?.data.shapes.find(
+      (shape) => shape.shape.type === "LINE" || shape.shape.type === "MULTI_SEGMENT_LINE"
+    );
+    const line = lineShape ? getLineShape(lineShape.shape) : null;
 
-    expect(lineShape?.shape.type).toBe("LINE");
-    if (lineShape?.shape.type === "LINE") {
-      expect(lineShape.shape.endBinding?.targetShapeId).toBe(activeDiagram?.data.shapes[0]?.id);
-      expect(lineShape.shape.endBinding?.side).toBeDefined();
-      expect(lineShape.shape.end.r).toBeGreaterThanOrEqual(6);
-      expect(lineShape.shape.end.r).toBeLessThanOrEqual(10);
-      expect(lineShape.shape.end.c).toBeGreaterThanOrEqual(24);
-      expect(lineShape.shape.end.c).toBeLessThanOrEqual(34);
+    expect(line?.type).toBe("MULTI_SEGMENT_LINE");
+    if (line) {
+      expect(line.endBinding?.targetShapeId).toBe(activeDiagram?.data.shapes[0]?.id);
+      expect(line.endBinding?.side).toBeDefined();
+      expect(line.end.r).toBeGreaterThanOrEqual(6);
+      expect(line.end.r).toBeLessThanOrEqual(10);
+      expect(line.end.c).toBeGreaterThanOrEqual(24);
+      expect(line.end.c).toBeLessThanOrEqual(34);
     }
   });
 
@@ -772,13 +820,11 @@ describe("editorInteractionActions", () => {
     store.dispatch(editorInteractionActions.pointerHover({ r: 10, c: 14 }));
     store.dispatch(editorInteractionActions.pointerUp({ r: 10, c: 14 }));
 
-    store.dispatch(editorInteractionActions.setTool("MULTI_SEGMENT_LINE"));
-    store.dispatch(editorInteractionActions.pointerClick({ coords: { r: 8, c: 14 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 8, c: 24 }));
-    store.dispatch(editorInteractionActions.pointerClick({ coords: { r: 8, c: 24 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 14, c: 24 }));
-    store.dispatch(editorInteractionActions.pointerClick({ coords: { r: 14, c: 24 } }));
-    store.dispatch(editorInteractionActions.completePolyline());
+    createLinePath(store, [
+      { r: 8, c: 14 },
+      { r: 8, c: 24 },
+      { r: 14, c: 24 },
+    ]);
 
     store.dispatch(editorInteractionActions.pointerClick({ coords: { r: 8, c: 6 } }));
     store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 8, c: 10 } }));
@@ -807,10 +853,7 @@ describe("editorInteractionActions", () => {
   it("supports double-click line label editing", () => {
     const store = createAsciipStore();
 
-    store.dispatch(editorInteractionActions.setTool("LINE"));
-    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 12, c: 6 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 12, c: 24 }));
-    store.dispatch(editorInteractionActions.pointerUp({ r: 12, c: 24 }));
+    createLinePath(store, [{ r: 12, c: 6 }, { r: 12, c: 24 }]);
 
     store.dispatch(editorInteractionActions.pointerDoubleClick({ r: 12, c: 15 }));
     expect(store.getState().diagram.mode.M).toBe("LINE_TEXT_EDIT");
@@ -824,8 +867,8 @@ describe("editorInteractionActions", () => {
       ) ?? null;
     const lineShape = activeDiagram?.data.shapes[0];
 
-    expect(lineShape?.shape.type).toBe("LINE");
-    if (lineShape?.shape.type === "LINE") {
+    expect(lineShape?.shape.type).toBe("MULTI_SEGMENT_LINE");
+    if (lineShape?.shape.type === "MULTI_SEGMENT_LINE") {
       expect(lineShape.shape.labelLines).toEqual(["API"]);
     }
   });
@@ -911,10 +954,7 @@ describe("editorInteractionActions", () => {
   it("preserves spaces when editing line labels", () => {
     const store = createAsciipStore();
 
-    store.dispatch(editorInteractionActions.setTool("LINE"));
-    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 12, c: 6 } }));
-    store.dispatch(editorInteractionActions.pointerHover({ r: 12, c: 24 }));
-    store.dispatch(editorInteractionActions.pointerUp({ r: 12, c: 24 }));
+    createLinePath(store, [{ r: 12, c: 6 }, { r: 12, c: 24 }]);
 
     store.dispatch(editorInteractionActions.pointerDoubleClick({ r: 12, c: 15 }));
     store.dispatch(editorInteractionActions.updateText("API gateway"));
@@ -926,8 +966,8 @@ describe("editorInteractionActions", () => {
       ) ?? null;
     const lineShape = activeDiagram?.data.shapes[0];
 
-    expect(lineShape?.shape.type).toBe("LINE");
-    if (lineShape?.shape.type === "LINE") {
+    expect(lineShape?.shape.type).toBe("MULTI_SEGMENT_LINE");
+    if (lineShape?.shape.type === "MULTI_SEGMENT_LINE") {
       expect(lineShape.shape.labelLines).toEqual(["API gateway"]);
     }
   });
@@ -968,7 +1008,7 @@ describe("editorInteractionActions", () => {
     }
   });
 
-  it("reroutes a two-sided bound path when one bound box moves", () => {
+  it("simplifies a two-sided bound path when one bound box move makes it straight", () => {
     const store = createAsciipStore();
 
     store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 6, c: 6 } }));
@@ -997,8 +1037,18 @@ describe("editorInteractionActions", () => {
     const pathShape = activeDiagram?.data.shapes.find(
       (shape) => shape.shape.type === "MULTI_SEGMENT_LINE",
     );
+    const movedRect = activeDiagram?.data.shapes.find(
+      (shapeObj) =>
+        shapeObj.shape.type === "RECTANGLE" &&
+        shapeObj.shape.tl.c === 26,
+    );
 
     expect(pathShape?.shape.type).toBe("MULTI_SEGMENT_LINE");
+    expect(movedRect?.shape.type).toBe("RECTANGLE");
+    if (movedRect?.shape.type === "RECTANGLE") {
+      expect(movedRect.shape.tl).toEqual({ r: 16, c: 26 });
+      expect(movedRect.shape.br).toEqual({ r: 20, c: 34 });
+    }
     if (pathShape?.shape.type === "MULTI_SEGMENT_LINE") {
       expect(pathShape.shape.startBinding?.targetShapeId).toBe(activeDiagram?.data.shapes[0]?.id);
       expect(pathShape.shape.endBinding?.targetShapeId).toBe(activeDiagram?.data.shapes[1]?.id);
@@ -1011,6 +1061,46 @@ describe("editorInteractionActions", () => {
         c: 26,
       });
     }
+  });
+
+  it("preserves authored elbows when a two-sided bound path is completed", () => {
+    const store = createAsciipStore();
+
+    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 6, c: 6 } }));
+    store.dispatch(editorInteractionActions.pointerHover({ r: 10, c: 14 }));
+    store.dispatch(editorInteractionActions.pointerUp({ r: 10, c: 14 }));
+
+    store.dispatch(editorInteractionActions.setTool("RECTANGLE"));
+    store.dispatch(editorInteractionActions.pointerDown({ coords: { r: 12, c: 26 } }));
+    store.dispatch(editorInteractionActions.pointerHover({ r: 18, c: 34 }));
+    store.dispatch(editorInteractionActions.pointerUp({ r: 18, c: 34 }));
+
+    createLinePath(store, [
+      { r: 8, c: 14 },
+      { r: 8, c: 20 },
+      { r: 14, c: 20 },
+      { r: 14, c: 26 },
+    ]);
+
+    let activeDiagram =
+      store.getState().app.diagrams.find(
+        (diagram) => diagram.id === store.getState().app.activeDiagramId,
+      ) ?? null;
+    let pathShape = activeDiagram?.data.shapes.find(
+      (shape) => shape.shape.type === "MULTI_SEGMENT_LINE",
+    );
+
+    expect(pathShape?.shape.type).toBe("MULTI_SEGMENT_LINE");
+    if (pathShape?.shape.type !== "MULTI_SEGMENT_LINE") {
+      return;
+    }
+
+    expect(pathShape.shape.segments.map((segment) => ({ start: segment.start, end: segment.end }))).toEqual([
+      { start: { r: 8, c: 14 }, end: { r: 8, c: 20 } },
+      { start: { r: 8, c: 20 }, end: { r: 14, c: 20 } },
+      { start: { r: 14, c: 20 }, end: { r: 14, c: 26 } },
+    ]);
+
   });
 
   it("keeps a locked connection side even when a shorter route appears after moving a box", () => {

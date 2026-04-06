@@ -2,7 +2,13 @@ import { useAppSelector, useEditorInteractions } from "../../store/hooks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { normalizeTlBr } from "../../models/shapes";
-import { CELL_HEIGHT, CELL_WIDTH, DrawOptions, FONT, canvasDraw } from "./draw";
+import {
+  CELL_HEIGHT,
+  CELL_WIDTH,
+  DrawOptions,
+  FONT,
+  canvasDraw,
+} from "./draw";
 import { TextShapeInput } from "./TextShapeInput";
 import { LineTextFloatingControls } from "./LineTextFloatingControls";
 import { RectangleTextFloatingControls } from "./RectangleTextFloatingControls";
@@ -440,6 +446,7 @@ export default function Canvas({
   const isPanToolActive = selectedTool === "PAN";
   const portalEditSessionRef = useRef<PortalEditSession | null>(null);
   const portalViewEditSessionRef = useRef<PortalEditSession | null>(null);
+  const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const portals = useMemo(
     () => accessSummary?.portals.filter((portal) => portal.canvasId === activeCanvasId) ?? [],
     [accessSummary?.portals, activeCanvasId],
@@ -585,14 +592,11 @@ export default function Canvas({
 
     let cancelled = false;
 
-    document.fonts
-      .load(FONT, "M")
-      .catch(() => null)
-      .then(() => {
-        if (!cancelled) {
-          setCanvasFontReady((value) => !value);
-        }
-      });
+    document.fonts.load(FONT, "M").catch(() => []).then(() => {
+      if (!cancelled) {
+        setCanvasFontReady((value) => !value);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -1174,6 +1178,30 @@ export default function Canvas({
   }, [currentEditedText, resolvedCursorCell?.r, resolvedCursorCell?.c]);
 
   useEffect(() => {
+    const gridCanvas = gridCanvasRef.current;
+    if (gridCanvas == null) return;
+    const gridCtx = gridCanvas.getContext("2d")!;
+
+    gridCanvas.width = canvasWidth;
+    gridCanvas.height = canvasHeight;
+
+    gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+    canvasDraw.drawGrid(
+      gridCtx,
+      canvasWidth,
+      canvasHeight,
+      rowCount,
+      colCount,
+      "rgba(148, 163, 184, 0.16)",
+      {
+        horizontalSubdivisionColor: "rgba(148, 163, 184, 0.12)",
+        horizontalSubdivisionAlpha: 1,
+        lineWidth: 1,
+      }
+    );
+  }, [canvasHeight, canvasWidth, colCount, rowCount]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas == null) return;
     const ctx = canvas.getContext("2d")!;
@@ -1184,12 +1212,6 @@ export default function Canvas({
 
     // Clear the canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    canvasDraw.setBackground(
-      ctx,
-      canvas.width,
-      canvas.height,
-      editorTheme.canvas.background
-    );
 
     // Set the cursor
     const hoveredCellEditable =
@@ -1211,16 +1233,6 @@ export default function Canvas({
         : nextActionOnClick === "CREATE"
         ? "copy"
         : "default";
-
-    // Draw the grid
-    canvasDraw.drawGrid(
-      ctx,
-      canvasWidth,
-      canvasHeight,
-      rowCount,
-      colCount,
-      editorTheme.canvas.grid
-    );
 
     // Draw hovered cell
     if (currentHoveredCell && nextActionOnClick === "CREATE") {
@@ -1244,6 +1256,8 @@ export default function Canvas({
         mode.M === "RECTANGLE_TEXT_EDIT" && mode.shapeId === so.id;
       const renderRectangleBorderLabelAsEditor =
         mode.M === "RECTANGLE_LABEL_EDIT" && mode.shapeId === so.id;
+      const rectangleBorderLabelEditorText =
+        renderRectangleBorderLabelAsEditor ? currentEditedText?.lines?.[0] ?? "" : undefined;
       const renderLineLabelAsEditor =
         mode.M === "LINE_TEXT_EDIT" && mode.shapeId === so.id;
 
@@ -1252,6 +1266,7 @@ export default function Canvas({
         drawResizePoints,
         renderRectangleLabelAsEditor,
         renderRectangleBorderLabelAsEditor,
+        rectangleBorderLabelEditorText,
         renderLineLabelAsEditor,
       };
     });
@@ -1734,9 +1749,22 @@ export default function Canvas({
         }}
       >
         <ContextMenuTrigger className="contents">
-          <div className="contents">
+          <div
+            style={{
+              position: "relative",
+              width: `${canvasWidth}px`,
+              height: `${canvasHeight}px`,
+              backgroundColor: editorTheme.canvas.background,
+            }}
+          >
+            <canvas
+              ref={gridCanvasRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-0 top-0 z-0"
+            ></canvas>
             <canvas
               ref={canvasRef}
+              className="absolute left-0 top-0 z-[1]"
               onContextMenuCapture={handleCanvasContextMenu}
               onMouseDown={(e) =>
                 {

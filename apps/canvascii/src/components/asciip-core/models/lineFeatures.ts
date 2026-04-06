@@ -6,6 +6,7 @@ import {
   isClosedMultiSegmentLine,
   Line,
   MultiSegment,
+  normalizeMultiSegmentLine,
   Segment,
   Shape,
   ShapeBorderBinding,
@@ -205,6 +206,10 @@ export function getBindableShapeHitAtCoords(
 export function applyShapeBindings(
   shape: Line | MultiSegment,
   shapeLookup: Map<string, Shape>,
+  options?: {
+    preserveExistingBindings?: boolean;
+    forceAutoroute?: boolean;
+  },
 ): Line | MultiSegment {
   const resolveBindableShape = (
     binding: ShapeBorderBinding | undefined,
@@ -226,6 +231,9 @@ export function applyShapeBindings(
   const resolvedStartBinding = (() => {
     if (!shape.startBinding || !startShape) {
       return undefined;
+    }
+    if (options?.preserveExistingBindings) {
+      return shape.startBinding;
     }
     if (shape.startBinding.locked) {
       return shape.startBinding;
@@ -249,6 +257,9 @@ export function applyShapeBindings(
   const resolvedEndBinding = (() => {
     if (!shape.endBinding || !endShape) {
       return undefined;
+    }
+    if (options?.preserveExistingBindings) {
+      return shape.endBinding;
     }
     if (shape.endBinding.locked) {
       return shape.endBinding;
@@ -312,7 +323,11 @@ export function applyShapeBindings(
   next.startBinding = resolvedStartBinding;
   next.endBinding = resolvedEndBinding;
 
+  const canAutorouteBoundPath =
+    options?.forceAutoroute || next.segments.length <= 1;
+
   if (
+    canAutorouteBoundPath &&
     startCoords &&
     endCoords &&
     resolvedStartBinding &&
@@ -378,6 +393,48 @@ export function applyShapeBindings(
       direction: segment.start.r <= segment.end.r ? "DOWN" : "UP",
     };
   });
+
+  return collapseRedundantDoglegs(next);
+
+}
+
+function collapseRedundantDoglegs(shape: MultiSegment): MultiSegment {
+  let next = _.cloneDeep(shape);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let index = 0; index < next.segments.length - 1; index += 1) {
+      const first = next.segments[index];
+      const second = next.segments[index + 1];
+      if (!first || !second || first.axis === second.axis) {
+        continue;
+      }
+      if (!_.isEqual(first.end, second.start)) {
+        continue;
+      }
+
+      const straightened =
+        first.start.r === second.end.r || first.start.c === second.end.c
+          ? createLineSegment(first.start, second.end)
+          : null;
+
+      if (!straightened || _.isEqual(straightened.start, straightened.end)) {
+        continue;
+      }
+
+      next = normalizeMultiSegmentLine({
+        ...next,
+        segments: [
+          ...next.segments.slice(0, index),
+          straightened,
+          ...next.segments.slice(index + 2),
+        ],
+      });
+      changed = true;
+      break;
+    }
+  }
 
   if (isClosedMultiSegmentLine(next) && next.segments.length > 0) {
     const firstStart = next.segments[0].start;
@@ -665,23 +722,109 @@ function routeBoundMultiSegment(
     endOut,
     [startBounds, endBounds],
   );
-  if (!routePoints) {
+  const fallbackRoutePoints =
+    routePoints ?? findFallbackOrthogonalRoute(startOut, endOut, [startBounds, endBounds]);
+  if (!fallbackRoutePoints) {
     return null;
   }
 
-  const allPoints = [start, startOut, ...routePoints.slice(1, -1), endOut, end];
-  const normalizedPoints = dedupeConsecutivePoints(allPoints);
+  const allPoints = [start, startOut, ...fallbackRoutePoints.slice(1, -1), endOut, end];
+  const segments = buildSegmentsFromRoutePoints(allPoints);
+  if (segments.length > 1 || start.r === end.r || start.c === end.c) {
+    return segments.length > 0 ? segments : null;
+  }
+
+  const forcedElbowRoute = [start, startOut, { r: startOut.r, c: endOut.c }, endOut, end];
+  const forcedSegments = buildSegmentsFromRoutePoints(forcedElbowRoute);
+  return forcedSegments.length > 0 ? forcedSegments : null;
+}
+
+function findFallbackOrthogonalRoute(
+  start: Coords,
+  end: Coords,
+  obstacles: BoundingBox[],
+): Coords[] | null {
+  if (start.r === end.r || start.c === end.c) {
+    return [start, end];
+  }
+
+  const directElbows = [
+    { r: start.r, c: end.c },
+    { r: end.r, c: start.c },
+  ];
+
+  for (const elbow of directElbows) {
+    if (
+      isOrthogonalSegmentClear(start, elbow, obstacles) &&
+      isOrthogonalSegmentClear(elbow, end, obstacles)
+    ) {
+      return [start, elbow, end];
+    }
+  }
+
+  const topRow = Math.min(...obstacles.map((box) => box.top)) - 1;
+  const bottomRow = Math.max(...obstacles.map((box) => box.bottom)) + 1;
+  const leftCol = Math.min(...obstacles.map((box) => box.left)) - 1;
+  const rightCol = Math.max(...obstacles.map((box) => box.right)) + 1;
+
+  const detours: Coords[][] = [
+    [start, { r: topRow, c: start.c }, { r: topRow, c: end.c }, end],
+    [start, { r: bottomRow, c: start.c }, { r: bottomRow, c: end.c }, end],
+    [start, { r: start.r, c: leftCol }, { r: end.r, c: leftCol }, end],
+    [start, { r: start.r, c: rightCol }, { r: end.r, c: rightCol }, end],
+  ];
+
+  const clearDetour = detours.find((route) =>
+    route.slice(1).every((point, index) => isOrthogonalSegmentClear(route[index]!, point, obstacles))
+  );
+  if (clearDetour) {
+    return clearDetour;
+  }
+
+  return [start, directElbows[0]!, end];
+}
+
+function buildSegmentsFromRoutePoints(points: Coords[]): Segment[] {
+  const normalizedPoints = dedupeConsecutivePoints(points);
   const cornerPoints = compressOrthogonalPoints(normalizedPoints);
   if (cornerPoints.length < 2) {
-    return null;
+    return [];
   }
 
-  const segments = cornerPoints
+  return cornerPoints
     .slice(1)
     .map((point, index) => createLineSegment(cornerPoints[index], point))
     .filter((segment) => !_.isEqual(segment.start, segment.end));
+}
 
-  return segments.length > 0 ? segments : null;
+function isOrthogonalSegmentClear(
+  start: Coords,
+  end: Coords,
+  obstacles: BoundingBox[],
+): boolean {
+  if (start.r !== end.r && start.c !== end.c) {
+    return false;
+  }
+
+  if (start.r === end.r) {
+    const row = start.r;
+    const [minCol, maxCol] = [Math.min(start.c, end.c), Math.max(start.c, end.c)];
+    for (let col = minCol + 1; col < maxCol; col += 1) {
+      if (obstacles.some((box) => row >= box.top && row <= box.bottom && col >= box.left && col <= box.right)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const col = start.c;
+  const [minRow, maxRow] = [Math.min(start.r, end.r), Math.max(start.r, end.r)];
+  for (let row = minRow + 1; row < maxRow; row += 1) {
+    if (obstacles.some((box) => row >= box.top && row <= box.bottom && col >= box.left && col <= box.right)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function dedupeConsecutivePoints(points: Coords[]): Coords[] {

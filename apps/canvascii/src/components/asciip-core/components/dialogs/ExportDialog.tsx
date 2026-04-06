@@ -1,5 +1,5 @@
 import { useAppSelector, useEditorInteractions } from "../../store/hooks";
-import { FONT_FAMILY } from "../canvas/draw";
+import { CELL_HEIGHT, FONT_FAMILY, FONT_SIZE } from "../canvas/draw";
 import { COMMENT_STYLE, getTextExport } from "../../models/representation";
 import { useState } from "react";
 import { Copy } from "lucide-react";
@@ -165,8 +165,8 @@ export function ExportDialog() {
           <div
             style={{
               fontFamily: FONT_FAMILY,
-              fontSize: "12px",
-              lineHeight: 1.25,
+              fontSize: `${FONT_SIZE}px`,
+              lineHeight: `${CELL_HEIGHT}px`,
               maxWidth: "50vw",
               maxHeight: "50vh",
               overflow: "auto",

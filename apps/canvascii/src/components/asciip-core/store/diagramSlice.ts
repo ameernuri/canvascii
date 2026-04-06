@@ -301,19 +301,20 @@ export const diagramSlice = createSlice({
       }
     },
     setTool: (state, action: PayloadAction<Tool>) => {
-      if (state.selectedTool !== action.payload) {
-        if (action.payload === "SELECT" || action.payload === "PAN") {
+      const nextTool = action.payload === "MULTI_SEGMENT_LINE" ? "LINE" : action.payload;
+      if (state.selectedTool !== nextTool) {
+        if (nextTool === "SELECT" || nextTool === "PAN") {
           state.mode = { M: "SELECT", shapeIds: [] };
         } else {
           state.mode = { M: "BEFORE_CREATING" };
         }
       }
       state.selectedPathPoint = null;
-      if (action.payload !== "TEXT") {
+      if (nextTool !== "TEXT") {
         state.textCursorCell = null;
       }
 
-      state.selectedTool = action.payload;
+      state.selectedTool = nextTool;
     },
     addPortalView: (state, action: PayloadAction<CanvasPortalView>) => {
       state.portalViews.push(_.cloneDeep(action.payload));
@@ -606,7 +607,8 @@ export const diagramSlice = createSlice({
         };
       } else if (
         state.mode.M === "BEFORE_CREATING" &&
-        state.selectedTool === "MULTI_SEGMENT_LINE"
+        (state.selectedTool === "LINE" ||
+          state.selectedTool === "MULTI_SEGMENT_LINE")
       ) {
         state.mode = {
           M: "CREATE",
@@ -621,7 +623,8 @@ export const diagramSlice = createSlice({
         };
       } else if (
         state.mode.M === "CREATE" &&
-        state.selectedTool === "MULTI_SEGMENT_LINE"
+        (state.selectedTool === "LINE" ||
+          state.selectedTool === "MULTI_SEGMENT_LINE")
       ) {
         const createMode = state.mode;
         if (isShapeLegal(createMode.shape)) {
@@ -891,6 +894,21 @@ export const diagramSlice = createSlice({
         }
       } else if (
         state.mode.M === "BEFORE_CREATING" &&
+        state.selectedTool === "LINE"
+      ) {
+        state.mode = {
+          M: "CREATE",
+          start: coords,
+          curr: coords,
+          checkpoint: null,
+          shape: {
+            type: "MULTI_SEGMENT_LINE",
+            segments: [createZeroWidthSegment(coords)],
+            startBinding: bindLineEndpointAtCoords(state.shapes, coords),
+          },
+        };
+      } else if (
+        state.mode.M === "BEFORE_CREATING" &&
         state.selectedTool === "RECTANGLE"
       ) {
         state.mode = {
@@ -902,21 +920,6 @@ export const diagramSlice = createSlice({
             type: "RECTANGLE",
             tl: coords,
             br: coords,
-          },
-        };
-      } else if (
-        state.mode.M === "BEFORE_CREATING" &&
-        state.selectedTool === "LINE"
-      ) {
-        state.mode = {
-          M: "CREATE",
-          start: coords,
-          curr: coords,
-          checkpoint: null,
-          shape: {
-            type: "LINE",
-            ...createZeroWidthSegment(coords),
-            startBinding: bindLineEndpointAtCoords(state.shapes, coords),
           },
         };
       } else if (
@@ -967,6 +970,29 @@ export const diagramSlice = createSlice({
           shapeId: createdShapeId,
           startShape: _.cloneDeep(state.mode.shape),
         };
+      } else if (
+        state.mode.M === "CREATE" &&
+        state.selectedTool === "LINE" &&
+        state.mode.shape.type === "MULTI_SEGMENT_LINE"
+      ) {
+        const newShape: MultiSegment | null = isShapeLegal(
+          state.mode.shape as MultiSegment
+        )
+          ? normalizeMultiSegmentLine(state.mode.shape as MultiSegment)
+          : null;
+
+        if (newShape) {
+          const createdShapeId = addNewShape(
+            state,
+            finalizeMultiSegmentShape(state, newShape)
+          );
+          pushHistory(state);
+          state.selectedTool = "SELECT";
+          state.mode = { M: "SELECT", shapeIds: [createdShapeId] };
+        } else {
+          state.selectedTool = "SELECT";
+          state.mode = { M: "SELECT", shapeIds: [] };
+        }
       } else if (
         state.mode.M === "CREATE" &&
         (state.mode.shape.type === "RECTANGLE" ||
@@ -1208,24 +1234,6 @@ export const diagramSlice = createSlice({
               };
               break;
             }
-            case "LINE": {
-              const rawShape: Shape = {
-                ...creationMode.shape,
-                type: "LINE",
-                ...createLineSegment(creationMode.start, curr),
-              };
-              const canvasShift = extendCanvasToFitShapes(state, [rawShape]);
-              const nextCreateMode = state.mode.M === "CREATE" ? state.mode : creationMode;
-              state.mode = {
-                ...nextCreateMode,
-                curr: shiftCoords(curr, canvasShift),
-                shape:
-                  canvasShift.r !== 0 || canvasShift.c !== 0
-                    ? shiftShape(rawShape, canvasShift)
-                    : rawShape,
-              };
-              break;
-            }
             case "MULTI_SEGMENT_LINE": {
               const rawShape = _.cloneDeep(creationMode.shape);
               const newSegment = createLineSegment(creationMode.start, curr);
@@ -1268,7 +1276,7 @@ export const diagramSlice = createSlice({
     onEnterPress: (state) => {
       if (
         state.mode.M === "CREATE" &&
-        state.selectedTool === "MULTI_SEGMENT_LINE"
+        state.mode.shape.type === "MULTI_SEGMENT_LINE"
       ) {
         const createMode = state.mode;
         const newShape: MultiSegment | null = isShapeLegal(
@@ -1283,8 +1291,10 @@ export const diagramSlice = createSlice({
             finalizeMultiSegmentShape(state, newShape)
           );
           pushHistory(state);
+          state.selectedTool = "SELECT";
           state.mode = { M: "SELECT", shapeIds: [createdShapeId] };
         } else {
+          state.selectedTool = "SELECT";
           state.mode = { M: "SELECT", shapeIds: [] };
         }
       }
@@ -1313,8 +1323,7 @@ export const diagramSlice = createSlice({
 
       if (
         state.mode.M === "CREATE" &&
-        (state.mode.shape.type === "RECTANGLE" ||
-          state.mode.shape.type === "LINE")
+        state.mode.shape.type === "RECTANGLE"
       ) {
         const newShape: Shape | null = isShapeLegal(state.mode.shape)
           ? state.mode.shape
@@ -1968,6 +1977,22 @@ function syncBoundLineShapesForTranslation(
       };
     }
 
+    if (
+      baseShape.type === "MULTI_SEGMENT_LINE" &&
+      baseShape.startBinding &&
+      baseShape.endBinding &&
+      (startMoved || endMoved)
+    ) {
+      const adjustedShape = applyShapeBindings(baseShape, shapeLookup, {
+        forceAutoroute: true,
+      });
+      shapeLookup.set(shapeObj.id, adjustedShape);
+      return {
+        ...shapeObj,
+        shape: adjustedShape,
+      };
+    }
+
     const reboundShape = applyShapeBindings(baseShape, shapeLookup);
     shapeLookup.set(shapeObj.id, reboundShape);
     return {
@@ -2024,7 +2049,13 @@ function resolveLineBindingsForResize(
   };
 }
 
-function withResolvedLineBindings(state: DiagramState, shape: Shape): Shape {
+function withResolvedLineBindings(
+  state: DiagramState,
+  shape: Shape,
+  options?: {
+    preserveExistingBindings?: boolean;
+  },
+): Shape {
   if (!isLineLikeShape(shape)) {
     return shape;
   }
@@ -2037,7 +2068,7 @@ function withResolvedLineBindings(state: DiagramState, shape: Shape): Shape {
       startBinding: shape.startBinding,
       endBinding: bindLineEndpointAtCoords(state.shapes, shape.end),
     };
-    return applyShapeBindings(resolvedShape, shapeLookup);
+    return applyShapeBindings(resolvedShape, shapeLookup, options);
   }
 
   const lastSegment = shape.segments[shape.segments.length - 1];
@@ -2050,7 +2081,7 @@ function withResolvedLineBindings(state: DiagramState, shape: Shape): Shape {
       ? bindLineEndpointAtCoords(state.shapes, lastSegment.end)
       : shape.endBinding,
   };
-  return applyShapeBindings(resolvedShape, shapeLookup);
+  return applyShapeBindings(resolvedShape, shapeLookup, options);
 }
 
 function shouldCloseMultiSegmentLine(shape: MultiSegment): boolean {
@@ -2167,7 +2198,9 @@ function finalizeMultiSegmentShape(state: DiagramState, shape: MultiSegment): Mu
         closed: false,
       };
 
-  return withResolvedLineBindings(state, closedShape) as MultiSegment;
+  return withResolvedLineBindings(state, closedShape, {
+    preserveExistingBindings: !closedShape.closed && closedShape.segments.length > 1,
+  }) as MultiSegment;
 }
 
 function isTextShapeEmpty(shape: TextShape): boolean {

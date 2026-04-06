@@ -11,6 +11,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import { selectors } from "../../store/selectors";
 import { editorTheme } from "../../theme";
@@ -37,6 +38,7 @@ export function TextShapeInput() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null);
   const lastEditSessionKeyRef = useRef<string | null>(null);
+  const [editorLetterSpacingPx, setEditorLetterSpacingPx] = useState(0);
   const mode = useAppSelector((state) => state.diagram.mode);
   const shapes = useAppSelector((state) => state.diagram.shapes);
   const globalStyle = useAppSelector((state) => state.diagram.globalStyle);
@@ -223,6 +225,7 @@ export function TextShapeInput() {
           height: CELL_HEIGHT + 2,
           rows: 1,
           topOffsetRows: 0,
+          topOffsetPx: 0,
           paddingTop: 0,
         };
       }
@@ -238,6 +241,7 @@ export function TextShapeInput() {
         height: heightRows * CELL_HEIGHT,
         rows: 1,
         topOffsetRows: 0,
+        topOffsetPx: 0,
         paddingTop: topOffsetRows * CELL_HEIGHT,
       };
     }
@@ -247,6 +251,7 @@ export function TextShapeInput() {
         height: CELL_HEIGHT + 6,
         rows: 1,
         topOffsetRows: 0,
+        topOffsetPx: 0,
         paddingTop: 0,
       };
     }
@@ -259,6 +264,7 @@ export function TextShapeInput() {
       height: Math.max(1, currentEditedText.lines.length || 1) * CELL_HEIGHT + 6,
       rows: Math.max(1, currentEditedText.lines.length || 1),
       topOffsetRows: 0,
+      topOffsetPx: 0,
       paddingTop: 0,
     };
   }, [currentEditedText.lines, lineEditConfig, rectangleEditConfig]);
@@ -312,12 +318,31 @@ export function TextShapeInput() {
     };
   }, [interactions]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+
+    ctx.font = FONT;
+    const measuredAdvance = ctx.measureText("M").width;
+    const nextLetterSpacing = CELL_WIDTH - measuredAdvance;
+    setEditorLetterSpacingPx((current) =>
+      Math.abs(current - nextLetterSpacing) < 0.01 ? current : nextLetterSpacing
+    );
+  }, []);
+
   return (
     <div
       style={{
         position: "absolute",
         left: `${currentEditedText.start.c * CELL_WIDTH}px`,
-        top: `${(currentEditedText.start.r + inputBoxSize.topOffsetRows) * CELL_HEIGHT}px`,
+        top: `${(currentEditedText.start.r + inputBoxSize.topOffsetRows) * CELL_HEIGHT + inputBoxSize.topOffsetPx}px`,
         zIndex: 3,
       }}
     >
@@ -348,15 +373,24 @@ export function TextShapeInput() {
           fontFamily: FONT_FAMILY,
           fontSize: `${FONT_SIZE}px`,
           lineHeight: `${CELL_HEIGHT}px`,
+          letterSpacing: `${editorLetterSpacingPx}px`,
+          fontKerning: "none",
           background: "transparent",
           color: rectangleEditConfig
             ? rectangleEditConfig.isSolidFill
-              ? editorTheme.canvas.background
+              ? rectangleEditConfig.mode === "RECTANGLE_LABEL_EDIT"
+                ? editorTheme.canvas.selectedShape
+                : editorTheme.canvas.background
               : editorTheme.canvas.selectedShape
             : lineEditConfig
             ? editorTheme.canvas.selectedShape
             : "transparent",
-          caretColor: rectangleEditConfig || lineEditConfig ? "#ffffff" : "transparent",
+          caretColor:
+            rectangleEditConfig?.mode === "RECTANGLE_LABEL_EDIT"
+              ? editorTheme.canvas.selectedShape
+              : rectangleEditConfig || lineEditConfig
+              ? "#ffffff"
+              : "transparent",
           outline: "none",
           whiteSpace:
             rectangleEditConfig?.mode === "RECTANGLE_TEXT_EDIT"

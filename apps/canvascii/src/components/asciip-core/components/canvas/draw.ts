@@ -20,17 +20,29 @@ import {
 import {
   getRectangleBorderLabelCellValueMap,
   getRectangleLabelCellValueMap,
+  getRectangleBorderLabelStart,
+  getRectangleBorderLabelWidth,
 } from "../../models/rectangleText";
 import { getLineLabelTextShape, isLineLikeShape } from "../../models/lineFeatures";
 
-// Kreative Square SM gives the canvas consistent box-drawing glyphs and a
-// square-ish cell grid. Keep the editing surface and renderer on the same metrics.
-export const FONT_SIZE = 16;
-export const CELL_WIDTH = 16;
-export const CELL_HEIGHT = 16;
+const BASE_FONT_SIZE = 17;
+const BASE_CELL_WIDTH = 8;
+const BASE_CELL_HEIGHT = 16;
+const scaleCanvasMetric = (metric: number, scale: number) =>
+  Math.max(1, Math.ceil(metric * scale));
 
-export const FONT_FAMILY = '"Kreative Square SM", monospace';
+export const FONT_SIZE = 18;
+export const TEXT_FONT_SIZE = FONT_SIZE;
+const FONT_SCALE = FONT_SIZE / BASE_FONT_SIZE;
+export const CELL_WIDTH = scaleCanvasMetric(BASE_CELL_WIDTH, FONT_SCALE);
+export const CELL_HEIGHT = scaleCanvasMetric(BASE_CELL_HEIGHT, FONT_SCALE);
+
+export const FONT_FAMILY = '"Terminus (TTF)", monospace';
+export const TEXT_FONT_FAMILY = FONT_FAMILY;
+export const DRAWING_FONT_FAMILY = FONT_FAMILY;
 export const FONT = `${FONT_SIZE}px ${FONT_FAMILY}`;
+export const TEXT_FONT = `${TEXT_FONT_SIZE}px ${TEXT_FONT_FAMILY}`;
+export const DRAWING_FONT = `${FONT_SIZE}px ${DRAWING_FONT_FAMILY}`;
 const BORDERLESS_SOLID_EDGE_INSET_PX = 0;
 // Overlap filled cells a little so subpixel antialiasing cannot reveal the grid
 // between adjacent cells inside large solid areas.
@@ -47,49 +59,62 @@ function setBackground(
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 }
 
-function drawVerticalGridLine(
+function drawGridDot(
   ctx: CanvasRenderingContext2D,
   x: number,
-  height: number,
-  color: string
-) {
-  ctx.beginPath();
-  ctx.moveTo(x, 0); // Starting point
-  ctx.lineTo(x, height); // Ending point
-  ctx.strokeStyle = color; // Line color
-  ctx.stroke(); // Draw the line
-}
-
-function drawHorizontalGridLine(
-  ctx: CanvasRenderingContext2D,
   y: number,
-  width: number,
-  color: string
+  color: string,
+  size: number
 ) {
-  ctx.beginPath();
-  ctx.moveTo(0, y); // Starting point
-  ctx.lineTo(width, y); // Ending point
-  ctx.strokeStyle = color; // Line color
-  ctx.stroke(); // Draw the line
+  const px = Math.round(x - size * 0.5);
+  const py = Math.round(y - size * 0.5);
+  ctx.fillStyle = color;
+  ctx.fillRect(px, py, size, size);
 }
 
 function drawGrid(
   ctx: CanvasRenderingContext2D,
-  canvasWidth: number,
-  canvasHeight: number,
+  _canvasWidth: number,
+  _canvasHeight: number,
   rowCount: number,
   colCount: number,
-  color: string
+  color: string,
+  options?: {
+    horizontalSubdivisionColor?: string;
+    horizontalSubdivisionAlpha?: number;
+    lineWidth?: number;
+  }
 ) {
-  drawVerticalGridLine(ctx, 0, canvasHeight, color);
-  _.forEach(_.range(0, colCount), (col) => {
-    drawVerticalGridLine(ctx, col * CELL_WIDTH, canvasHeight, color);
+  const mainDotSize = Math.max(1, options?.lineWidth ?? 2);
+  _.forEach(_.range(0, rowCount + 1), (row) => {
+    _.forEach(_.range(0, colCount + 1), (col) => {
+      drawGridDot(
+        ctx,
+        col * CELL_WIDTH,
+        row * CELL_HEIGHT,
+        color,
+        mainDotSize
+      );
+    });
   });
 
-  drawHorizontalGridLine(ctx, 0, canvasWidth, color);
-  _.forEach(_.range(0, rowCount), (row) => {
-    drawHorizontalGridLine(ctx, row * CELL_HEIGHT, canvasWidth, color);
-  });
+  if (options?.horizontalSubdivisionColor) {
+    const subdivisionDotSize = 1;
+    ctx.save();
+    ctx.globalAlpha = options.horizontalSubdivisionAlpha ?? 0.6;
+    _.forEach(_.range(0, rowCount), (row) => {
+      _.forEach(_.range(0, colCount + 1), (col) => {
+        drawGridDot(
+          ctx,
+          col * CELL_WIDTH,
+          row * CELL_HEIGHT + CELL_HEIGHT * 0.5,
+          options.horizontalSubdivisionColor as string,
+          subdivisionDotSize
+        );
+      });
+    });
+    ctx.restore();
+  }
 }
 
 function drawSelectBox(
@@ -250,6 +275,7 @@ export type DrawOptions = {
   drawResizePoints: boolean;
   renderRectangleLabelAsEditor?: boolean;
   renderRectangleBorderLabelAsEditor?: boolean;
+  rectangleBorderLabelEditorText?: string;
   renderLineLabelAsEditor?: boolean;
 };
 
@@ -309,73 +335,31 @@ function drawBlockBorderSegment(
 ) {
   const halfW = CELL_WIDTH / 2;
   const halfH = CELL_HEIGHT / 2;
-  const overlap = BLOCK_SEGMENT_OVERLAP_PX;
   ctx.fillStyle = color;
-
   switch (segment) {
     case "TOP":
-      ctx.fillRect(
-        x - overlap,
-        y + halfH - overlap,
-        CELL_WIDTH + overlap * 2,
-        halfH + overlap * 2
-      );
+      ctx.fillRect(x, y + halfH, CELL_WIDTH, CELL_HEIGHT - halfH);
       return;
     case "RIGHT":
-      ctx.fillRect(
-        x - overlap,
-        y - overlap,
-        halfW + overlap * 2,
-        CELL_HEIGHT + overlap * 2
-      );
+      ctx.fillRect(x, y, CELL_WIDTH, CELL_HEIGHT);
       return;
     case "BOTTOM":
-      ctx.fillRect(
-        x - overlap,
-        y - overlap,
-        CELL_WIDTH + overlap * 2,
-        halfH + overlap * 2
-      );
+      ctx.fillRect(x, y, CELL_WIDTH, halfH);
       return;
     case "LEFT":
-      ctx.fillRect(
-        x + halfW - overlap,
-        y - overlap,
-        halfW + overlap * 2,
-        CELL_HEIGHT + overlap * 2
-      );
+      ctx.fillRect(x, y, CELL_WIDTH, CELL_HEIGHT);
       return;
     case "TOP_LEFT":
-      ctx.fillRect(
-        x + halfW - overlap,
-        y + halfH - overlap,
-        halfW + overlap * 2,
-        halfH + overlap * 2
-      );
+      ctx.fillRect(x, y + halfH, CELL_WIDTH, CELL_HEIGHT - halfH);
       return;
     case "TOP_RIGHT":
-      ctx.fillRect(
-        x - overlap,
-        y + halfH - overlap,
-        halfW + overlap * 2,
-        halfH + overlap * 2
-      );
+      ctx.fillRect(x, y + halfH, CELL_WIDTH, CELL_HEIGHT - halfH);
       return;
     case "BOTTOM_RIGHT":
-      ctx.fillRect(
-        x - overlap,
-        y - overlap,
-        halfW + overlap * 2,
-        halfH + overlap * 2
-      );
+      ctx.fillRect(x, y, CELL_WIDTH, halfH);
       return;
     case "BOTTOM_LEFT":
-      ctx.fillRect(
-        x + halfW - overlap,
-        y - overlap,
-        halfW + overlap * 2,
-        halfH + overlap * 2
-      );
+      ctx.fillRect(x, y, CELL_WIDTH, halfH);
       return;
   }
 }
@@ -458,7 +442,6 @@ function getGraphicCanvasRepresentation(
             }),
             charColor: color,
             blockBorderSegment,
-            clearGridUnderlay: true,
           };
           continue;
         }
@@ -517,15 +500,14 @@ function getGraphicCanvasRepresentation(
       }
     }
 
-    if (
-      shape.type === "RECTANGLE" &&
-      shape.label &&
-      shape.label.trim().length > 0
-    ) {
-      if (!drawOpts[idx].renderRectangleBorderLabelAsEditor) {
+    if (shape.type === "RECTANGLE") {
+      const borderLabelText = drawOpts[idx].renderRectangleBorderLabelAsEditor
+        ? ""
+        : shape.label ?? "";
+      if (borderLabelText.trim().length > 0) {
         const borderLabelRepr: CellValueMap = getRectangleBorderLabelCellValueMap(
           shape,
-          shape.label
+          borderLabelText
         );
         for (const row in borderLabelRepr) {
           if (!graphicShapeRepr[row]) {
@@ -536,10 +518,43 @@ function getGraphicCanvasRepresentation(
             if (!graphicShapeRepr[row][col]) {
               graphicShapeRepr[row][col] = {};
             }
+            if (rectangleBorderMode === "BLOCK") {
+              delete graphicShapeRepr[row][col].blockBorderSegment;
+            }
             graphicShapeRepr[row][col].char = labelChar;
             graphicShapeRepr[row][col].charColor = color;
           }
         }
+      }
+    }
+
+    if (
+      shape.type === "RECTANGLE" &&
+      rectangleBorderMode === "BLOCK" &&
+      drawOpts[idx].renderRectangleBorderLabelAsEditor
+    ) {
+      const start = getRectangleBorderLabelStart(shape);
+      const maxWidth = getRectangleBorderLabelWidth(shape);
+      const liveEditorText = drawOpts[idx].rectangleBorderLabelEditorText ?? shape.label ?? "";
+      const visibleWidth = Math.max(
+        1,
+        Math.min(maxWidth, Array.from(liveEditorText).length)
+      );
+      const cutoutStartCol = Math.max(start.col, shape.tl.c + 1);
+      const cutoutEndCol = Math.min(
+        start.col + visibleWidth,
+        shape.br.c - 1
+      );
+      if (!graphicShapeRepr[start.row]) {
+        graphicShapeRepr[start.row] = {};
+      }
+      for (let col = cutoutStartCol; col <= cutoutEndCol; col++) {
+        if (!graphicShapeRepr[start.row][col]) {
+          graphicShapeRepr[start.row][col] = {};
+        }
+        delete graphicShapeRepr[start.row][col].blockBorderSegment;
+        delete graphicShapeRepr[start.row][col].char;
+        delete graphicShapeRepr[start.row][col].charColor;
       }
     }
 
@@ -673,8 +688,8 @@ function drawShapes(
     opts
   );
 
-  ctx.font = FONT;
   ctx.textBaseline = "middle"; // To align the text in the middle of the cell (the default value "alphabetic" does not align the text in the middle)
+  let activeFont = "";
   for (const row in repr) {
     for (const col in repr[row]) {
       const {
@@ -726,9 +741,19 @@ function drawShapes(
           charColor ?? "#ffffff",
           blockBorderSegment
         );
-      } else if (char && char.length > 0) {
+      }
+      if (char && char.length > 0) {
+        const nextFont = FONT;
+        if (activeFont !== nextFont) {
+          ctx.font = nextFont;
+          activeFont = nextFont;
+        }
         ctx.fillStyle = charColor ?? "#ffffff";
-        ctx.fillText(char, x, y + 0.5 * CELL_HEIGHT);
+        ctx.fillText(
+          char,
+          x,
+          y + 0.5 * CELL_HEIGHT
+        );
       }
     }
   }

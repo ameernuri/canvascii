@@ -2,7 +2,6 @@ import { useAppSelector, useEditorInteractions } from "../../store/hooks";
 import { Tool } from "../../store/diagramSlice";
 import {
   Fence,
-  GitBranch,
   Hand,
   Minus,
   MousePointer2,
@@ -30,13 +29,7 @@ const PRIMARY_TOOLS: ToolDefinition[] = [
   { tool: "SELECT", label: "Select tool", title: "Select (V)", icon: MousePointer2 },
   { tool: "PAN", label: "Pan canvas", title: "Pan canvas (Space)", icon: Hand },
   { tool: "RECTANGLE", label: "Create rectangle", title: "Add rectangle (R)", icon: Square },
-  { tool: "LINE", label: "Create line", title: "Add line (L) / arrow (A)", icon: Minus },
-  {
-    tool: "MULTI_SEGMENT_LINE",
-    label: "Create multi-segment line",
-    title: "Add multi-segment line (P)",
-    icon: GitBranch,
-  },
+  { tool: "LINE", label: "Create line", title: "Add line/path (L, A, P)", icon: Minus },
   { tool: "TEXT", label: "Add text", title: "Add text (T)", icon: Type },
 ];
 

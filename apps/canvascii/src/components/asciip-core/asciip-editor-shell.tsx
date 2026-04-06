@@ -88,6 +88,17 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value)
 }
 
+function diagramDataFromState(diagramState: DiagramState): DiagramData {
+  return {
+    canvasSize: diagramState.canvasSize,
+    shapes: diagramState.shapes,
+    groups: diagramState.groups,
+    portalViews: diagramState.portalViews,
+    styleMode: diagramState.styleMode,
+    globalStyle: diagramState.globalStyle,
+  }
+}
+
 export function mergeExternalDiagramDataPreservingLocalDraft(
   currentDiagramState: DiagramState,
   canonicalDiagramData: DiagramData,
@@ -218,6 +229,10 @@ export function AsciipEditorShell({
   const commandBatchRef = useRef(onCommandBatch)
   const lastAppliedExternalStateRef = useRef(JSON.stringify(initialState))
   const lastPublishedLiveStateRef = useRef(JSON.stringify(initialState))
+  const lastPatchedDiagramSyncRef = useRef<{
+    externalJson: string
+    mergedDiagramJson: string
+  } | null>(null)
   const pendingLiveStateRef = useRef<AppState | null>(null)
   const livePublishFrameRef = useRef<number | null>(null)
   persistRef.current = onEditorStateChange
@@ -244,7 +259,21 @@ export function AsciipEditorShell({
   useEffect(() => {
     lastAppliedExternalStateRef.current = JSON.stringify(initialState)
     lastPublishedLiveStateRef.current = JSON.stringify(initialState)
+    lastPatchedDiagramSyncRef.current = null
   }, [documentId, initialState])
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production' || typeof window === 'undefined') {
+      return
+    }
+    ;(window as typeof window & { __CANVASCII_STORE__?: typeof store }).__CANVASCII_STORE__ = store
+    return () => {
+      const target = window as typeof window & { __CANVASCII_STORE__?: typeof store }
+      if (target.__CANVASCII_STORE__ === store) {
+        delete target.__CANVASCII_STORE__
+      }
+    }
+  }, [store])
 
   useEffect(() => {
     const nextJson = stableJson(normalizedState)
@@ -252,6 +281,7 @@ export function AsciipEditorShell({
     if (nextJson === currentStoreJson) {
       lastAppliedExternalStateRef.current = nextJson
       lastPublishedLiveStateRef.current = nextJson
+      lastPatchedDiagramSyncRef.current = null
       return
     }
     if (nextJson === lastAppliedExternalStateRef.current) return
@@ -271,13 +301,41 @@ export function AsciipEditorShell({
       })
 
     if (canPatchDiagramDataInPlace && activeDiagram) {
+      const currentDiagramState = store.getState().diagram
       const mergedDiagramData = mergeExternalDiagramDataPreservingLocalDraft(
-        store.getState().diagram,
+        currentDiagramState,
         activeDiagram.data,
       )
+      const mergedDiagramJson = stableJson(mergedDiagramData)
+      const currentAppDiagramData =
+        currentAppState.diagrams.find((diagram) => diagram.id === currentAppState.activeDiagramId)?.data ??
+        null
+      const currentAppDiagramJson = currentAppDiagramData ? stableJson(currentAppDiagramData) : null
+      const currentDiagramJson = stableJson(diagramDataFromState(currentDiagramState))
+
+      if (mergedDiagramJson === currentAppDiagramJson && mergedDiagramJson === currentDiagramJson) {
+        lastAppliedExternalStateRef.current = nextJson
+        lastPublishedLiveStateRef.current = nextJson
+        lastPatchedDiagramSyncRef.current = null
+        return
+      }
+
+      const lastPatchedDiagramSync = lastPatchedDiagramSyncRef.current
+      if (
+        lastPatchedDiagramSync?.externalJson === nextJson &&
+        lastPatchedDiagramSync.mergedDiagramJson === mergedDiagramJson
+      ) {
+        return
+      }
+
+      lastPatchedDiagramSyncRef.current = {
+        externalJson: nextJson,
+        mergedDiagramJson,
+      }
+
       store.dispatch(
         diagramActions.applyCommittedDiagramState({
-          nextState: store.getState().diagram,
+          nextState: currentDiagramState,
           canonicalDiagramData: mergedDiagramData,
         }),
       )
@@ -285,6 +343,7 @@ export function AsciipEditorShell({
       return
     }
 
+    lastPatchedDiagramSyncRef.current = null
     store.dispatch(appActions.replaceAppState(normalizedState))
   }, [normalizedState, store])
 

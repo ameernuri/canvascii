@@ -9,9 +9,6 @@ export function FooterTip() {
   const isLineToolSelected = useAppSelector(
     (state) => state.diagram.selectedTool === "LINE"
   );
-  const isMultiSegmentLineToolSelected = useAppSelector(
-    (state) => state.diagram.selectedTool === "MULTI_SEGMENT_LINE"
-  );
 
   const isSingleTextShapeSelected = useAppSelector(
     (state) =>
@@ -26,8 +23,6 @@ export function FooterTip() {
   const tip: string | null = isTextBeingWritten
     ? "Press Ctrl+Enter to complete editing text."
     : isLineToolSelected
-    ? "Click-and-Drag to create a line or arrow."
-    : isMultiSegmentLineToolSelected
     ? "Click to place segments. Click the starting point to close the path, or double-click to finish it open."
     : isSingleTextShapeSelected && !isTextBeingWritten
     ? "Double-click to edit text."

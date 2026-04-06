@@ -23,7 +23,7 @@ export default function RootLayout({
       <head>
         <link
           rel="preload"
-          href="/fonts/KreativeSquareSM.ttf"
+          href="/fonts/TerminusTTF-4.49.3.ttf"
           as="font"
           type="font/ttf"
           crossOrigin="anonymous"

@@ -5,8 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @font-face {
-  font-family: 'Kreative Square SM';
-  src: url('/fonts/KreativeSquareSM.ttf') format('truetype');
+  font-family: 'Terminus (TTF)';
+  src: url('/fonts/TerminusTTF-4.49.3.ttf') format('truetype');
   font-style: normal;
   font-weight: 400;
   font-display: block;

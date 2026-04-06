@@ -307,7 +307,7 @@ function App({
           (event.key === "p" || event.key === "P" || event.key === "w" || event.key === "W") &&
           !hasPrimaryModifier
         ) {
-          interactions.setTool("MULTI_SEGMENT_LINE");
+          interactions.setTool("LINE");
         } else if ((event.key === "o" || event.key === "O") && !hasPrimaryModifier && canManagePortals) {
           interactions.setTool("FENCE");
         } else if ((event.key === "g" || event.key === "G") && !hasPrimaryModifier && !isReadOnly) {

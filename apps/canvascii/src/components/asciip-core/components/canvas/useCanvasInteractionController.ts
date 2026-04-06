@@ -108,6 +108,7 @@ export function useCanvasInteractionController({
     pendingMoveActions: Coords[];
     duplicate: boolean;
     shiftKey: boolean;
+    dragStarted?: boolean;
   } | null>(null);
   const portalCreationSessionRef = useRef<CreationSession>(null);
   const [portalDraftBounds, setPortalDraftBounds] = useState<PortalBounds>(null);
@@ -141,7 +142,9 @@ export function useCanvasInteractionController({
     panSessionRef.current = null;
   };
 
-  const isClickFirstPathTool = selectedTool === "MULTI_SEGMENT_LINE";
+  const isClickFirstPathTool =
+    selectedTool === "LINE" || selectedTool === "MULTI_SEGMENT_LINE";
+  const isHybridLineTool = selectedTool === "LINE";
   const isFenceToolActive = selectedTool === "FENCE" && Boolean(onCreateFenceFromBounds);
   const isPortalToolActive = selectedTool === "PORTAL" && Boolean(onCreatePortalViewFromBounds);
 
@@ -269,6 +272,27 @@ export function useCanvasInteractionController({
         pendingMouseDown.current.duplicate = true;
       }
 
+      if (
+        isHybridLineTool &&
+        mode.M === "BEFORE_CREATING" &&
+        !pendingMouseDown.current.dragStarted &&
+        !_.isEqual(pendingMouseDown.current.cell, coords)
+      ) {
+        pendingMouseDown.current.dragStarted = true;
+        onPointerDown({
+          coords: pendingMouseDown.current.cell,
+          duplicate: pendingMouseDown.current.duplicate,
+          shiftKey: pendingMouseDown.current.shiftKey,
+        });
+        dispatchHoverIfChanged(coords);
+        return;
+      }
+
+      if (pendingMouseDown.current.dragStarted) {
+        dispatchHoverIfChanged(coords);
+        return;
+      }
+
       const { pendingMoveActions } = pendingMouseDown.current;
       if (pendingMoveActions.length === 0) {
         if (!_.isEqual(hoveredCellRef.current, coords)) {
@@ -336,6 +360,11 @@ export function useCanvasInteractionController({
       if (pending.timeoutId != null) {
         window.clearTimeout(pending.timeoutId);
         pending.pendingMoveActions.forEach((moveCoords) => dispatchHoverIfChanged(moveCoords));
+      }
+      if (pending.dragStarted) {
+        pendingMouseDown.current = null;
+        onPointerUp(coords);
+        return;
       }
       if (isClickFirstPathTool) {
         dispatchHoverIfChanged(coords);

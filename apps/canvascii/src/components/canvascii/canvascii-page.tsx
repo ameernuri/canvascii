@@ -145,6 +145,29 @@ function createCanvasStorageKey(title: string, prefix = 'canvas') {
   return `${prefix}-${slug}-${stamp}`
 }
 
+function samePortalTargetFiles(
+  left: Record<string, CanvasDetail>,
+  right: Record<string, CanvasDetail>,
+) {
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  for (const key of leftKeys) {
+    const leftDetail = left[key]
+    const rightDetail = right[key]
+    if (!leftDetail || !rightDetail) return false
+    if (
+      leftDetail.id !== rightDetail.id ||
+      leftDetail.etag !== rightDetail.etag ||
+      leftDetail.revision !== rightDetail.revision ||
+      leftDetail.updatedAt !== rightDetail.updatedAt
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
 function getUniqueCanvasTitle(existingTitles: string[]) {
   return createUniqueCanvasName(existingTitles)
 }
@@ -1808,7 +1831,7 @@ export function CanvasciiPage() {
     )
 
     if (targetDocumentIds.length === 0) {
-      setPortalTargetFiles({})
+      setPortalTargetFiles((current) => (Object.keys(current).length === 0 ? current : {}))
       return
     }
 
@@ -1821,7 +1844,10 @@ export function CanvasciiPage() {
     )
       .then((entries) => {
         if (cancelled) return
-        setPortalTargetFiles(Object.fromEntries(entries))
+        const nextFiles = Object.fromEntries(entries)
+        setPortalTargetFiles((current) =>
+          samePortalTargetFiles(current, nextFiles) ? current : nextFiles,
+        )
       })
       .catch(() => {
         if (cancelled) return
